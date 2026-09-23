@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write scripts/termux/README.md
-README.md: 145d668ccf6bcee6e082758acd5150b38c2abf8b
-README.zh.md: 54dcb02a3d768db7e172192dbc38f4087b22b113
+README.md: a44a3f9f7ee087caefd24095e2c4f311af9d4493
+README.zh.md: edd11aef3f66ffe4b5706951fd9d5c7a6f0eadb7

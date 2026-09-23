@@ -3,10 +3,20 @@
 # - CI=true: skip lefthook postinstall checks
 # - --expose-internals: cordis loader needs Node internal ESM loader
 #   (node-addon-require-builtin has no android prebuilt)
+# - runs the prebuilt CLI bundle (apps/cli/lib/bin.js) when present: tsx
+#   transpiles src/bin.ts on every boot (~0.4s). Rebuild after changing
+#   apps/cli source: CI=true pnpm run build:lib:host.
+# - NODE_COMPILE_CACHE: reuse V8 bytecode across boots (Node 22+).
 # Runs from the caller's cwd so session project context is preserved.
 export CI=true
 # The checkout this launcher runs from; override when yours lives elsewhere.
 DSH_REPO="${DSH_REPO:-$HOME/build/deepseek-harness}"
+if [ -f "$DSH_REPO/apps/cli/lib/bin.js" ]; then
+  export NODE_COMPILE_CACHE="${NODE_COMPILE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/dsh-node-compile}"
+  mkdir -p "$NODE_COMPILE_CACHE" 2>/dev/null || true
+  exec node --expose-internals "$DSH_REPO/apps/cli/lib/bin.js" "$@"
+fi
+# No build artifact yet: fall back to the source entry through tsx.
 exec node --expose-internals \
   --import "$DSH_REPO/node_modules/tsx/dist/esm/index.mjs" \
   "$DSH_REPO/apps/cli/src/bin.ts" "$@"
