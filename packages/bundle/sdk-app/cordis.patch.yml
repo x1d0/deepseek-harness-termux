@@ -23,3 +23,79 @@
 
 - id: hmr
   disabled: true
+
+# Lazy rows: import and activation defer to `EntryTree.wakeLazy()`. The SDK
+# handshake (`initialize`) waits only for non-lazy entries, so these module
+# graphs stay out of the startup import queue; the wake starts right after the
+# handshake response and `session/prompt` joins it before the first turn, so
+# every tool and service below is live before the first model request.
+# Only rows no handshake-path plugin hard-injects belong here: a non-lazy
+# fiber waiting on a lazy service would park in `loader.await()`'s inertia
+# tasks and stall `initialize` itself.
+- id: llm-pi-ai
+  lazy: true
+
+# Typert remote gateway and plugin inventory: not on any SDK request path.
+- id: typert-gateway
+  lazy: true
+
+- id: plugin-package-inventory-deepseek
+  lazy: true
+
+# Telemetry export; a session without feedback never captures anyway.
+- id: session-telemetry-otel
+  lazy: true
+
+# Full-text search backend (`openAt: never` keeps SQLite closed until asked).
+- id: session-query-sqlite
+  lazy: true
+
+# Web tools and their providers (one dependency group).
+- id: web
+  lazy: true
+
+- id: web-search-deepseek
+  lazy: true
+
+- id: web-fetch-http
+  lazy: true
+
+- id: tool-web
+  lazy: true
+
+# Subagent runtime, providers, and its tools (one dependency group).
+- id: subagent
+  lazy: true
+
+- id: subagent-spawn-in-process
+  lazy: true
+
+- id: subagent-fork-in-process
+  lazy: true
+
+- id: tool-subagent-control
+  lazy: true
+
+- id: tool-subagent
+  lazy: true
+
+- id: tool-subagent-fork
+  lazy: true
+
+# Workflow runtime and tool.
+- id: ptc-runtime
+  lazy: true
+
+- id: workflow-ptc
+  lazy: true
+
+- id: tool-workflow
+  lazy: true
+
+# Standalone tool rows: they register into the tool registry, which the first
+# model request snapshots after the wake.
+- id: tool-goal
+  lazy: true
+
+- id: tool-todo
+  lazy: true

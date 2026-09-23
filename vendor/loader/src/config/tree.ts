@@ -48,6 +48,19 @@ export abstract class EntryTree {
     }
   }
 
+  /**
+   * Start every lazy entry that has not begun, then wait for the tree to
+   * settle. Idempotent and safe to call concurrently: an entry's `init()`
+   * coalesces its own import task. Lazy entries are absent from `getTasks()`
+   * until woken, which is exactly why `await()` never waits for them.
+   */
+  async wakeLazy() {
+    const pending = [...this.entries()]
+      .filter(entry => entry.lazy && !entry.woken && !entry.fiber && !entry._initTask)
+    await Promise.allSettled(pending.map(entry => entry.init()))
+    await this.await()
+  }
+
   ensureId(options: Partial<EntryOptions>) {
     if (!options.id) {
       do {

@@ -21,6 +21,14 @@ export const name = 'sdk-jsonrpc-server'
 // Only the agent factory is required; initialize reads the optional LLM seam with ctx.get().
 export const inject = ['agents']
 
+/** Methods that touch lazy-entry services and must join `wakeLazy()` first. */
+const WAKE_BEFORE = new Set([
+  'session/prompt',
+  'session/list',
+  'session/history',
+  'session/rename',
+])
+
 /** JSON-RPC deployment config plus runtime-only test hooks. */
 export interface JsonRpcConfig {
   /** Report max-token turn/subagent termination as a successful SDK result. */
@@ -81,8 +89,19 @@ export function apply(ctx: Context, config: JsonRpcConfig): void {
     // lifecycle work, and synchronous effect registration; no scheduler delay
     // is part of readiness. A hand-built context without Loader remains
     // immediately usable.
+    const loader = ctx.get('loader') as { await(): Promise<void>, wakeLazy(): Promise<void> } | undefined
     if (method === 'initialize') {
-      await ctx.get('loader')?.await()
+      await loader?.await()
+      // Lazy entries stay out of the handshake; start them right after the
+      // response and let a first-turn request (below) join them if it arrives
+      // first. This keeps their import graphs out of startup.
+      setImmediate(() => { void loader?.wakeLazy() })
+    } else if (WAKE_BEFORE.has(method)) {
+      // These methods reach into lazy rows' services (tool registration before
+      // the first model request, `sessionQuery`, `sessionTitle`), so they join
+      // the wake first. Everything else — notably unknown methods — must stay
+      // scheduler-fast and never wait on loader work.
+      await loader?.wakeLazy()
     }
     const result = await server.handleRequest(method, params)
     if (method === 'shutdown') {
