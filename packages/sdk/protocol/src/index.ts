@@ -24,6 +24,8 @@ export type {
   SessionHistoryResult,
   SessionListEntry,
   SessionListParams,
+  SessionArchiveParams,
+  SessionArchiveResult,
   SessionListResult,
   SessionRenameParams,
   SessionRenameResult,

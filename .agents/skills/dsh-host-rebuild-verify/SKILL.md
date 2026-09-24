@@ -186,13 +186,14 @@ python3 .agents/skills/dsh-host-rebuild-verify/scripts/wire-probe.py --mode new
 | A `session/list` | 方法存在；本会话在列表里且字段齐全（`createdAt`/`live`/`persisted`）；`cwd` 过滤生效 |
 | A `session/history` | 方法存在；事件非空、不截断；能在事件里找到第一轮文本；`limit` 取最新 N 条并标 `truncated`；返回 `session` 身份 |
 | A `session/rename` | 方法存在；返回规范化后的标题；历史里出现 `user` 来源的 `session/title` 事件；空白标题被拒；**未 prompt 过的新 id 也能改（服务端先创建再改名）** |
+| A `session/archive`/`session/unarchive` | 方法存在；归档回 `archived: true` 并让 `session/list` 带 `archived: true` 标志；重复归档幂等；未知 id 被拒（**绝不偷偷新建**）；unarchive 找回后标志翻回 `false` |
 | A 关闭 → B 新进程 `session/resume` | 跨进程续接：`resumed=true`；重复调用幂等（`resumed=false`） |
 | B 追问一轮 + 读 mock 落盘的请求体 | **续接不是伪造**：第二轮模型请求里真的带着第一轮的 `MARK-ONE` |
 | B `session/history` | 续接后的历史含两轮（`MARK-ONE` 与 `MARK-TWO` 都在） |
 | C 在**别的目录** `initialize` 后 resume | 换目录被拒绝（错误信息含 `was created in`）——不把历史描述不到的地方当执行目录 |
 | C 其余负例 | 未知 id resume 报错（**绝不偷偷新建**）；空 id / 未知 id 的 history 报错；`limit=0` 报错；C 进程没有偷偷建会话 |
 
-### 全过时应该看到的 31 条（逐字）
+### 全过时应该看到的 38 条（逐字）
 
 ```
 A initialize
@@ -226,6 +227,13 @@ C session/history 未知 id 报错
 C session/list limit=0 被拒绝
 C 换目录 rename 被拒（改名也先 resume，cwd 检查拦住）
 C 没有偷偷新建会话（列表里只有 A 建的）
+A session/archive 可用
+A archive 回 archived=true 与本会话 id
+A 归档后 session/list 带 archived=true 标志
+A 重复归档幂等（仍 archived=true）
+A 未知 id 归档被拒（不偷偷新建）
+A session/unarchive 找回（archived=false）
+A 找回后 session/list 带 archived=false 标志
 ```
 
 ---
@@ -266,10 +274,11 @@ stat -c '%y' packages/sdk/server/lib/index.js
 
 ## 8. 判据（什么算"过"）
 
-1. 单元：`Tests 39 passed`
-2. 产物：`server/lib/index.js` 里 `session/list`/`session/resume`/`session/rename` 各 ≥1，
+1. 单元：`Tests` 全过（server.spec 现 42 条左右，每加一个方法都会涨）
+2. 产物：`server/lib/index.js` 里 `session/list`/`session/resume`/`session/rename`/`session/archive`/`session/unarchive` 各 ≥1，
    且 `protocol/lib/types/types.d.ts` 里有 `'session/list'`（协议是类型，只在 .d.ts 里）
-3. 线协议：`--mode new` 31/31、退出码 0，且这几条必须在里面：
+3. 线协议：`--mode new` 38/38、退出码 0，且这几条必须在里面：
+   - **`A 归档后 session/list 带 archived=true 标志`** 与 **`A 找回后 session/list 带 archived=false 标志`** ← 归档是 registry 共享集合而非客户端别名的硬证据
    - `A session/list 含本会话`
    - `A session/history limit 生效并标 truncated`
    - `B resume 报告 resumed=true` 与 `B 重复 resume 幂等（resumed=false）`
@@ -300,7 +309,12 @@ stat -c '%y' packages/sdk/server/lib/index.js
 | `session/history` | `{sessionId, limit?}` | `{session: SessionDescriptor, events, truncated}` | `events` 与 `session.event` 通知同一套词汇；`limit` 取**最新 N 条**并置 `truncated`；未知 id 报错 |
 | `session/resume` | `{sessionId}` | `{sessionId, resumed}` | **绝不新建**（未知 id 报错）；已 live 则 `resumed=false`；cwd 不匹配先 dispose 再拒绝；**不重放历史**（要历史自己调 `session/history`） |
 | `session/rename` | `{sessionId, title}` | `{sessionId, title}` | 不活跃时先把它变活跃：已落盘的走 `session/resume`（cwd 校验照旧），未知 id 按 `session/prompt` 的方式惰性创建；然后通过 `sessionTitle` 服务追加 `user` 来源的 `session/title` 事件；空白标题报 `must contain visible characters` |
+| `session/archive` | `{sessionId}` | `{sessionId, archived:true}` | 进 `workspaceRegistry` 全局归档集：纯可见性（分组界面隐藏），日志与工作区记账不动；幂等；会话必须存在（未知 id 报 `no such session`） |
+| `session/unarchive` | `{sessionId}` | `{sessionId, archived:false}` | 移出归档集；幂等（不在集里也成功） |
 
-四方法都要求先 `initialize`（否则报 `SDK server is not initialized`）。
+七个方法都要求先 `initialize`（否则报 `SDK server is not initialized`）。
+`session/archive` / `session/unarchive` 依赖 `workspaceRegistry`——`dsh-sdk-app` 用 `- insert:` 挂
+`@deepseek-ai/dsh-workspace`（**顶层 `- id:` 行是 patch 语义，新挂载必须进 `- insert:` 段**），
+`sdk-minimal` 不挂；`session/list` 的 `archived` 标志则 best-effort（没注册表就全是未归档）。
 `session/list` / `session/history` 依赖部署挂载 `sessionQuery`——`dsh-base` 提供，`sdk-minimal` 不提供。
 `session/rename` 依赖 `sessionTitle`，同样由 `dsh-base` 提供（不活跃时会先 resume 或惰性创建）。

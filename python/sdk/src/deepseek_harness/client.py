@@ -21,6 +21,7 @@ from .models import (
     JsonObject,
     JsonValue,
     Notification,
+    SessionArchiveResult,
     SessionHistoryResult,
     SessionListResult,
     SessionRenameResult,
@@ -235,6 +236,21 @@ class HarnessClient:
             "session/rename",
             {"sessionId": session_id, "title": title},
             response_model=SessionRenameResult,
+        )
+
+    def archive_session(self, session_id: str) -> SessionArchiveResult:
+        """Add one session to the registry-global archive set (idempotent)."""
+        return self._archive("session/archive", session_id)
+
+    def unarchive_session(self, session_id: str) -> SessionArchiveResult:
+        """Drop one session from the archive set (idempotent)."""
+        return self._archive("session/unarchive", session_id)
+
+    def _archive(self, method: str, session_id: str) -> SessionArchiveResult:
+        return self.request(
+            method,
+            {"sessionId": session_id},
+            response_model=SessionArchiveResult,
         )
 
     def request(

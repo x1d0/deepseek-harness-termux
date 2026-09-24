@@ -354,6 +354,35 @@ def main() -> int:
             rec("A 新会话历史里有 title 事件",
                 not bad(fresh_hist) and '"session/title"' in fresh_text and "新建会话名" in fresh_text,
                 fresh_hist.error if bad(fresh_hist) else f"events={len(fresh_hist.get('events') or [])}")
+
+        # ---- 归档面：registry-global 归档集（纯可见性标记，与 web 共享）----
+        archived = probe_method("A session/archive 可用", a, "session/archive", {"sessionId": sid}, new)
+        if new and isinstance(archived, dict):
+            rec("A archive 回 archived=true 与本会话 id",
+                archived.get("sessionId") == sid and archived.get("archived") is True,
+                json.dumps(archived, ensure_ascii=False))
+            listed = safe(lambda: a.call("session/list", {}))
+            entry = None if bad(listed) else next(
+                (e for e in (listed.get("sessions") or []) if e.get("sessionId") == sid), None)
+            rec("A 归档后 session/list 带 archived=true 标志",
+                not bad(listed) and entry is not None and entry.get("archived") is True,
+                listed.error if bad(listed) else json.dumps(entry, ensure_ascii=False))
+            again_arch = safe(lambda: a.call("session/archive", {"sessionId": sid}))
+            rec("A 重复归档幂等（仍 archived=true）",
+                not bad(again_arch) and (again_arch or {}).get("archived") is True,
+                again_arch.error if bad(again_arch) else json.dumps(again_arch, ensure_ascii=False))
+            expect_error("A 未知 id 归档被拒（不偷偷新建）", a, "session/archive",
+                         {"sessionId": "session-并不存在"}, "no such session")
+            unarch = safe(lambda: a.call("session/unarchive", {"sessionId": sid}))
+            rec("A session/unarchive 找回（archived=false）",
+                not bad(unarch) and (unarch or {}).get("archived") is False,
+                unarch.error if bad(unarch) else json.dumps(unarch, ensure_ascii=False))
+            listed2 = safe(lambda: a.call("session/list", {}))
+            entry2 = None if bad(listed2) else next(
+                (e for e in (listed2.get("sessions") or []) if e.get("sessionId") == sid), None)
+            rec("A 找回后 session/list 带 archived=false 标志",
+                not bad(listed2) and entry2 is not None and entry2.get("archived") is False,
+                listed2.error if bad(listed2) else json.dumps(entry2, ensure_ascii=False))
         a.shutdown()
 
         # ---- 进程 B：新进程 resume 同一个会话，追问一轮，看上下文是否接上 ----

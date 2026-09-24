@@ -1442,4 +1442,58 @@ describe('session surface', () => {
       await rm(storageDir, { recursive: true, force: true })
     }
   })
+
+  it('archives and unarchives through the workspace registry', { timeout: 30_000 }, async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-archive-'))
+    const ctx = await makeHarness(storageDir)
+    provideSessionQuery(ctx, [{ id: 'main', createdAt: 2_000 }])
+    const archived = new Set<string>()
+    ctx.provide('workspaceRegistry', {
+      get archivedSessionIds() { return [...archived] },
+      archiveSession: async (sessionId: SessionId) => { archived.add(String(sessionId)) },
+      unarchiveSession: async (sessionId: SessionId) => { archived.delete(String(sessionId)) },
+    } as never)
+    try {
+      const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+      await server.initialize({ cwd: storageDir, provider: 'deepseek-official', model: 'plain-model' })
+
+      // Archiving flips `session/list`'s flag; unarchiving flips it back.
+      await expect(server.handleRequest('session/archive', { sessionId: 'main' }))
+        .resolves.toEqual({ sessionId: 'main', archived: true })
+      const archivedList = await server.handleRequest('session/list', {}) as { sessions: { sessionId: string; archived: boolean }[] }
+      expect(archivedList.sessions.find(item => item.sessionId === 'main')?.archived).toBe(true)
+      await expect(server.handleRequest('session/unarchive', { sessionId: 'main' }))
+        .resolves.toEqual({ sessionId: 'main', archived: false })
+      const plainList = await server.handleRequest('session/list', {}) as { sessions: { sessionId: string; archived: boolean }[] }
+      expect(plainList.sessions.find(item => item.sessionId === 'main')?.archived).toBe(false)
+
+      // An empty id is a TypeError like on every other method.
+      await expect(server.handleRequest('session/archive', { sessionId: '' }))
+        .rejects.toThrow(/non-empty string/)
+      await server.shutdown()
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
+  it('lists sessions unarchived and explains the missing workspace registry', { timeout: 30_000 }, async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-archive-'))
+    const ctx = await makeHarness(storageDir)  // no workspaceRegistry mounted
+    provideSessionQuery(ctx, [{ id: 'main', createdAt: 2_000 }])
+    try {
+      const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+      await server.initialize({ cwd: storageDir, provider: 'deepseek-official', model: 'plain-model' })
+
+      // Without the registry, listing still works and reports everything unarchived.
+      const listed = await server.handleRequest('session/list', {}) as { sessions: { sessionId: string; archived: boolean }[] }
+      expect(listed.sessions.find(item => item.sessionId === 'main')?.archived).toBe(false)
+      await expect(server.handleRequest('session/archive', { sessionId: 'main' }))
+        .rejects.toThrow(/require the workspaceRegistry service/)
+      await server.shutdown()
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
 })

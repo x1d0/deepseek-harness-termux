@@ -18,6 +18,8 @@ import {
   JsonRpcResponseError,
   type InitializeParams,
   type InitializeResult,
+  type SessionArchiveParams,
+  type SessionArchiveResult,
   type SessionDescriptor,
   type SessionHistoryParams,
   type SessionHistoryResult,
@@ -380,6 +382,33 @@ export class HarnessClient {
   }
 
   /**
+   * Add one session to the registry-global archive set (idempotent).
+   * @param params - the session to archive.
+   * @returns the id and its membership after the call.
+   */
+  async archiveSession(params: SessionArchiveParams): Promise<SessionArchiveResult> {
+    return this.requestedArchive('session/archive', params)
+  }
+
+  /**
+   * Drop one session from the registry-global archive set (idempotent).
+   * @param params - the session to unarchive.
+   * @returns the id and its membership after the call.
+   */
+  async unarchiveSession(params: SessionArchiveParams): Promise<SessionArchiveResult> {
+    return this.requestedArchive('session/unarchive', params)
+  }
+
+  /** Shared wire exchange for `session/archive` and `session/unarchive`. */
+  private async requestedArchive(method: 'session/archive' | 'session/unarchive', params: SessionArchiveParams): Promise<SessionArchiveResult> {
+    const result = await this.request(method, { ...params })
+    if (!isRecord(result) || typeof result.sessionId !== 'string' || typeof result.archived !== 'boolean') {
+      throw new SdkProtocolError(`${method} returned no archive membership: ${JSON.stringify(result)}`)
+    }
+    return { sessionId: result.sessionId, archived: result.archived }
+  }
+
+  /**
    * Send one JSON-RPC request and await its result.
    * @param method - the wire method name.
    * @param params - the params object; omitted params send `{}`.
@@ -592,7 +621,9 @@ function validatedSessionEntry(value: unknown): SessionListEntry {
   if (typeof flags.live !== 'boolean' || typeof flags.persisted !== 'boolean') {
     throw new SdkProtocolError(`session/list entry has no live/persisted flags: ${JSON.stringify(value)}`)
   }
-  return { ...descriptor, live: flags.live, persisted: flags.persisted }
+  // `archived` is synthesized leniently: a server predating the archive surface
+  // lists nothing archived, which is the honest reading of "no such flag".
+  return { ...descriptor, live: flags.live, persisted: flags.persisted, archived: flags.archived === true }
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

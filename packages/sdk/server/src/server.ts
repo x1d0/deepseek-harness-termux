@@ -29,6 +29,8 @@ import type {
   SessionListResult,
   SessionPromptParams,
   SessionPromptResult,
+  SessionArchiveParams,
+  SessionArchiveResult,
   SessionRenameParams,
   SessionRenameResult,
   SessionResumeParams,
@@ -53,6 +55,25 @@ interface SessionRecord {
 interface SessionTitleWriter {
   /** Append an explicit user title to one live session and fold the result. */
   rename(session: Session, title: string): { readonly title: string }
+}
+
+/**
+ * The slice of the deployment's `workspaceRegistry` service this server uses
+ * for the registry-global archive set.
+ *
+ * Declared structurally for the same reason as {@link SessionQueryReader}:
+ * `dsh-base` does not mount workspace (it lives in web layers), the sdk app
+ * opts in — a deployment without it boots fine, and only `session/archive` /
+ * `session/unarchive` explain what is missing while `session/list` simply
+ * reports everything as unarchived.
+ */
+interface WorkspaceArchiveStore {
+  /** The registry-global archive set, in archive order. */
+  readonly archivedSessionIds: readonly string[]
+  /** Add one existing session to the archive set (idempotent). */
+  archiveSession(sessionId: SessionId): Promise<void>
+  /** Drop one session from the archive set (idempotent). */
+  unarchiveSession(sessionId: SessionId): Promise<void>
 }
 
 /**
@@ -301,6 +322,7 @@ export class HarnessSdkJsonRpcServer {
     const matching = params.cwd === undefined ? records : records.filter(record => record.header.cwd === params.cwd)
     const limit = params.limit === undefined ? undefined : assertPositiveLimit('session/list', params.limit)
     const limited = limit === undefined ? matching : matching.slice(0, limit)
+    const archived = this.archivedIds()
     const sessions: SessionListEntry[] = []
     for (const record of limited) {
       const title = await query.readTitle(record.header.id)
@@ -311,6 +333,7 @@ export class HarnessSdkJsonRpcServer {
         ...title === undefined ? {} : { title: title.title },
         live: record.live,
         persisted: record.persisted,
+        archived: archived.has(String(record.header.id)),
       })
     }
     return { sessions }
@@ -413,6 +436,35 @@ export class HarnessSdkJsonRpcServer {
   }
 
   /**
+   * Archive one session into the registry-global archive set.
+   *
+   * Pure visibility: the session keeps its workspace accounting slot and its
+   * log is never touched — grouping surfaces (including `session/list`
+   * consumers) hide archived ids. The registry only archives sessions that
+   * exist (live or persisted), and archiving twice writes nothing.
+   * @param params - target session.
+   * @returns the id and its membership after the call (`archived: true`).
+   */
+  async archiveSession(params: SessionArchiveParams): Promise<SessionArchiveResult> {
+    this.assertInitialized()
+    const sessionId = assertSessionId('session/archive', params.sessionId)
+    await this.workspaceArchive().archiveSession(sessionId)
+    return { sessionId, archived: true }
+  }
+
+  /**
+   * Remove one session from the registry-global archive set (idempotent).
+   * @param params - target session.
+   * @returns the id and its membership after the call (`archived: false`).
+   */
+  async unarchiveSession(params: SessionArchiveParams): Promise<SessionArchiveResult> {
+    this.assertInitialized()
+    const sessionId = assertSessionId('session/unarchive', params.sessionId)
+    await this.workspaceArchive().unarchiveSession(sessionId)
+    return { sessionId, archived: false }
+  }
+
+  /**
    * Bring a rename target live without creating a duplicate persisted session.
    *
    * Resume first: it reaches the persisted log when one exists and preserves
@@ -448,6 +500,26 @@ export class HarnessSdkJsonRpcServer {
       )
     }
     return service as SessionTitleWriter
+  }
+
+  /** Write to the deployment's workspace-registry archive set, or explain what is missing. */
+  private workspaceArchive(): WorkspaceArchiveStore {
+    const service = (this.ctx as unknown as { get(key: string): unknown }).get('workspaceRegistry')
+    if (service === undefined) {
+      throw new Error(
+        'session/archive and session/unarchive require the workspaceRegistry service, '
+        + 'which this deployment does not mount (the sdk app mounts @deepseek-ai/dsh-workspace; '
+        + 'sdk-minimal does not)',
+      )
+    }
+    return service as WorkspaceArchiveStore
+  }
+
+  /** Best-effort archive membership: without the registry, everything lists as unarchived. */
+  private archivedIds(): ReadonlySet<string> {
+    const service = (this.ctx as unknown as { get(key: string): unknown }).get('workspaceRegistry')
+    if (service === undefined) return new Set()
+    return new Set((service as WorkspaceArchiveStore).archivedSessionIds)
   }
 
   /** Read the deployment's session corpus service, or explain what is missing. */
@@ -529,6 +601,10 @@ export class HarnessSdkJsonRpcServer {
         return this.resumeSession(params as unknown as SessionResumeParams)
       case 'session/rename':
         return this.renameSession(params as unknown as SessionRenameParams)
+      case 'session/archive':
+        return this.archiveSession(params as unknown as SessionArchiveParams)
+      case 'session/unarchive':
+        return this.unarchiveSession(params as unknown as SessionArchiveParams)
       case 'shutdown':
         return this.shutdown()
       default:

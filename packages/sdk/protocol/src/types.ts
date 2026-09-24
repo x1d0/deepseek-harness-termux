@@ -121,6 +121,8 @@ export interface SessionListEntry extends SessionDescriptor {
   live: boolean
   /** Whether the active persistence backend currently lists the id. */
   persisted: boolean
+  /** Whether the id sits in the registry-global archive set (hidden from grouping surfaces). */
+  archived: boolean
 }
 
 /** Parameters for `session/list`. */
@@ -185,6 +187,20 @@ export interface SessionRenameResult {
   title: string
 }
 
+/** Parameters for `session/archive` and `session/unarchive`. */
+export interface SessionArchiveParams {
+  /** Session to (un)archive; an id neither live nor persisted is an error. */
+  sessionId: string
+}
+
+/** `session/archive` / `session/unarchive` result. */
+export interface SessionArchiveResult {
+  /** The affected session id (echo of the request). */
+  sessionId: string
+  /** The session's archive membership after the call. */
+  archived: boolean
+}
+
 /** Server-to-client notifications by JSON-RPC method name. */
 export interface HarnessSdkNotificationMap {
   'session.event': SessionEventNotification
@@ -201,5 +217,7 @@ export interface HarnessSdkRequestMap {
   'session/history': { params: SessionHistoryParams; result: SessionHistoryResult }
   'session/resume': { params: SessionResumeParams; result: SessionResumeResult }
   'session/rename': { params: SessionRenameParams; result: SessionRenameResult }
+  'session/archive': { params: SessionArchiveParams; result: SessionArchiveResult }
+  'session/unarchive': { params: SessionArchiveParams; result: SessionArchiveResult }
   'shutdown': { params: undefined; result: Record<string, never> }
 }

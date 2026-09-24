@@ -14,6 +14,8 @@ import type {
   SessionHistoryResult,
   SessionListParams,
   SessionListResult,
+  SessionArchiveParams,
+  SessionArchiveResult,
   SessionRenameParams,
   SessionRenameResult,
   SessionResumeParams,
@@ -169,6 +171,28 @@ export class DeepSeekHarness implements AsyncDisposable {
   }
 
   /**
+   * Add one session to the registry-global archive set: pure visibility, the
+   * log and workspace accounting are never touched. Idempotent; the session
+   * must exist (live or persisted).
+   * @param params - the session to archive.
+   * @returns the id and its membership after the call (`archived: true`).
+   */
+  async archiveSession(params: SessionArchiveParams): Promise<SessionArchiveResult> {
+    await this.start()
+    return this.client.archiveSession(params)
+  }
+
+  /**
+   * Drop one session from the registry-global archive set (idempotent).
+   * @param params - the session to unarchive.
+   * @returns the id and its membership after the call (`archived: false`).
+   */
+  async unarchiveSession(params: SessionArchiveParams): Promise<SessionArchiveResult> {
+    await this.start()
+    return this.client.unarchiveSession(params)
+  }
+
+  /**
    * Shut down and reap the runtime subprocess. Idempotent and terminal —
    * a closed harness no longer retries a failed handshake.
    * @returns settlement of the complete teardown.
@@ -240,6 +264,19 @@ export class HarnessSession {
   async rename(title: string): Promise<string> {
     const result = await this.harness.renameSession({ sessionId: this.id, title })
     return result.title
+  }
+
+  /**
+   * Archive this session (visibility only: the log and workspace accounting
+   * stay untouched; {@link unarchive} brings it back).
+   */
+  async archive(): Promise<void> {
+    await this.harness.archiveSession({ sessionId: this.id })
+  }
+
+  /** Remove this session from the archive set (idempotent). */
+  async unarchive(): Promise<void> {
+    await this.harness.unarchiveSession({ sessionId: this.id })
   }
 
   /**

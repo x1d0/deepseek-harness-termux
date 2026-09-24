@@ -42,6 +42,8 @@ class SessionDescriptor(BaseModel):
 class SessionListEntry(SessionDescriptor):
     live: bool
     persisted: bool
+    # 旧 server 不带这个标志：缺省读作"未归档"，与 TS 客户端同款宽容合成。
+    archived: bool = False
 
 
 class SessionListResult(BaseModel):
@@ -65,3 +67,10 @@ class SessionResumeResult(BaseModel):
 class SessionRenameResult(BaseModel):
     sessionId: str
     title: str
+
+
+class SessionArchiveResult(BaseModel):
+    """`session/archive` / `session/unarchive`: the id and its membership after the call."""
+
+    sessionId: str
+    archived: bool

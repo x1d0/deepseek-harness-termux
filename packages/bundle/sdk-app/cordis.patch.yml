@@ -21,6 +21,14 @@
       config:
         maxTokensAsSuccess: !!js "process.env.DSH_MAX_TOKENS_AS_SUCCESS === undefined ? true : JSON.parse(process.env.DSH_MAX_TOKENS_AS_SUCCESS)"
 
+    # Workspace registry: the registry-global archive set behind
+    # `session/archive` / `session/unarchive` and `session/list`'s `archived`
+    # flag. Web layers mount this too, so both front ends share one archive
+    # set. Not lazy on purpose: `session/list` reads the set on every call,
+    # and the bootstrap is a header-only scan.
+    - id: workspace
+      name: '@deepseek-ai/dsh-workspace'
+
 - id: hmr
   disabled: true
 

@@ -10,6 +10,7 @@ from .errors import SdkProtocolError
 from .models import (
     JsonObject,
     Notification,
+    SessionArchiveResult,
     SessionHistoryResult,
     SessionListResult,
     SessionRenameResult,
@@ -153,6 +154,16 @@ class DeepSeekHarness:
         self.start()
         return self._client.rename_session(session_id, title)
 
+    def archive_session(self, session_id: str) -> SessionArchiveResult:
+        """Add one session to the registry-global archive set (visibility only)."""
+        self.start()
+        return self._client.archive_session(session_id)
+
+    def unarchive_session(self, session_id: str) -> SessionArchiveResult:
+        """Drop one session from the archive set (idempotent)."""
+        self.start()
+        return self._client.unarchive_session(session_id)
+
 
 class Session:
     def __init__(self, harness: DeepSeekHarness, session_id: str) -> None:
@@ -166,6 +177,14 @@ class Session:
     def rename(self, title: str) -> str:
         """Rename this live session; resume a persisted one first."""
         return self.harness.rename_session(self.id, title).title
+
+    def archive(self) -> None:
+        """Archive this session (log and workspace accounting untouched)."""
+        self.harness.archive_session(self.id)
+
+    def unarchive(self) -> None:
+        """Remove this session from the archive set."""
+        self.harness.unarchive_session(self.id)
 
     def run(
         self,
