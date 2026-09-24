@@ -21,6 +21,7 @@ from .models import (
     JsonObject,
     JsonValue,
     Notification,
+    SessionAbortResult,
     SessionArchiveResult,
     SessionHistoryResult,
     SessionListResult,
@@ -236,6 +237,14 @@ class HarnessClient:
             "session/rename",
             {"sessionId": session_id, "title": title},
             response_model=SessionRenameResult,
+        )
+
+    def abort_session(self, session_id: str) -> SessionAbortResult:
+        """Abort one live session's running turn; idle reports `aborted: False`."""
+        return self.request(
+            "session/abort",
+            {"sessionId": session_id},
+            response_model=SessionAbortResult,
         )
 
     def archive_session(self, session_id: str) -> SessionArchiveResult:

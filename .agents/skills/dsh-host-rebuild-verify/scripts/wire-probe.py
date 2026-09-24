@@ -355,6 +355,15 @@ def main() -> int:
                 not bad(fresh_hist) and '"session/title"' in fresh_text and "新建会话名" in fresh_text,
                 fresh_hist.error if bad(fresh_hist) else f"events={len(fresh_hist.get('events') or [])}")
 
+        # ---- 中止面：停掉正在跑的回合（这里只探空闲语义；真中断慢回合见 xi E2E）----
+        aborted = probe_method("A session/abort 可用", a, "session/abort", {"sessionId": sid}, new)
+        if new and isinstance(aborted, dict):
+            rec("A 空闲会话 abort 是 no-op（aborted=false）",
+                aborted.get("sessionId") == sid and aborted.get("aborted") is False,
+                json.dumps(aborted, ensure_ascii=False))
+            expect_error("A 不活跃会话 abort 被拒（不 resume 不新建）", a, "session/abort",
+                         {"sessionId": "session-ghost-abort"}, "not live")
+
         # ---- 归档面：registry-global 归档集（纯可见性标记，与 web 共享）----
         archived = probe_method("A session/archive 可用", a, "session/archive", {"sessionId": sid}, new)
         if new and isinstance(archived, dict):

@@ -1443,6 +1443,37 @@ describe('session surface', () => {
     }
   })
 
+  it('aborts a running turn and treats idle as a no-op', { timeout: 30_000 }, async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-abort-'))
+    const llmServer = await mockCompletionServer()
+    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
+    vi.stubEnv('DEEPSEEK_BASE_URL', llmServer.url)
+    const ctx = await makeHarness(storageDir)
+    try {
+      const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+      await server.initialize({ cwd: storageDir, provider: 'deepseek-official', model: 'plain-model' })
+      await server.prompt({ sessionId: 'main', contentBlocks: [{ type: 'text', text: 'first turn' }] })
+      await vi.waitFor(() => { expect(llmServer.requests).toHaveLength(1) })
+
+      // Not live in this runtime: nothing to abort, and nothing is created.
+      await expect(server.handleRequest('session/abort', { sessionId: 'ghost' }))
+        .rejects.toThrow(/is not live/)
+      await expect(server.handleRequest('session/abort', { sessionId: '' }))
+        .rejects.toThrow(/non-empty string/)
+
+      // A turn seen as running is cancelled; the repeat is an idempotent no-op.
+      ;(server as unknown as { busy: Set<string> }).busy.add('main')
+      await expect(server.handleRequest('session/abort', { sessionId: 'main' }))
+        .resolves.toEqual({ sessionId: 'main', aborted: true })
+      await expect(server.handleRequest('session/abort', { sessionId: 'main' }))
+        .resolves.toEqual({ sessionId: 'main', aborted: false })
+      await server.shutdown()
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
   it('archives and unarchives through the workspace registry', { timeout: 30_000 }, async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-archive-'))
     const ctx = await makeHarness(storageDir)

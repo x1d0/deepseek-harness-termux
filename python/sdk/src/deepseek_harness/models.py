@@ -74,3 +74,10 @@ class SessionArchiveResult(BaseModel):
 
     sessionId: str
     archived: bool
+
+
+class SessionAbortResult(BaseModel):
+    """`session/abort`: whether a running turn was actually cancelled."""
+
+    sessionId: str
+    aborted: bool

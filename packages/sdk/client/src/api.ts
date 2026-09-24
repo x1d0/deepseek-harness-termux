@@ -14,6 +14,8 @@ import type {
   SessionHistoryResult,
   SessionListParams,
   SessionListResult,
+  SessionAbortParams,
+  SessionAbortResult,
   SessionArchiveParams,
   SessionArchiveResult,
   SessionRenameParams,
@@ -171,6 +173,18 @@ export class DeepSeekHarness implements AsyncDisposable {
   }
 
   /**
+   * Abort one session's running turn with a user cancel cause: the turn closes
+   * with a `turn/end` reason of `aborted`, and the next prompt starts fresh.
+   * Only a live session has a turn to abort; an idle session is a no-op.
+   * @param params - the session whose turn to abort.
+   * @returns the id and whether a running turn was actually cancelled.
+   */
+  async abortSession(params: SessionAbortParams): Promise<SessionAbortResult> {
+    await this.start()
+    return this.client.abortSession(params)
+  }
+
+  /**
    * Add one session to the registry-global archive set: pure visibility, the
    * log and workspace accounting are never touched. Idempotent; the session
    * must exist (live or persisted).
@@ -277,6 +291,15 @@ export class HarnessSession {
   /** Remove this session from the archive set (idempotent). */
   async unarchive(): Promise<void> {
     await this.harness.unarchiveSession({ sessionId: this.id })
+  }
+
+  /**
+   * Abort this session's running turn.
+   * @returns whether a running turn was actually cancelled (false when idle).
+   */
+  async abort(): Promise<boolean> {
+    const result = await this.harness.abortSession({ sessionId: this.id })
+    return result.aborted
   }
 
   /**

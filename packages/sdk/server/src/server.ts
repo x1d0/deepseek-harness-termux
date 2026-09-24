@@ -29,6 +29,8 @@ import type {
   SessionListResult,
   SessionPromptParams,
   SessionPromptResult,
+  SessionAbortParams,
+  SessionAbortResult,
   SessionArchiveParams,
   SessionArchiveResult,
   SessionRenameParams,
@@ -195,6 +197,8 @@ export class HarnessSdkJsonRpcServer {
   private maxTokens: number | undefined
   private llmFiber: { dispose(): Promise<void> } | undefined
   private readonly sessions = new Map<string, SessionRecord>()
+  /** Sessions whose agent reported `running` and no `idle` yet — the abort gate. */
+  private readonly busy = new Set<string>()
   private readonly sessionCreations = new Map<string, Promise<SessionRecord>>()
   private readonly disposers: (() => void)[] = []
   private shutdownTask: Promise<Record<string, never>> | undefined
@@ -212,7 +216,10 @@ export class HarnessSdkJsonRpcServer {
       this.transport.notify('session.event', payload)
     }))
     this.disposers.push(ctx.on('agent/status', ({ agent, status }) => {
-      this.transport.notify('session.status', { sessionId: String(agent.session.id), status })
+      const sessionId = String(agent.session.id)
+      if (status === 'running') this.busy.add(sessionId)
+      else this.busy.delete(sessionId)
+      this.transport.notify('session.status', { sessionId, status })
     }))
     this.disposers.push(ctx.on('session/created', (session) => {
       const parentSession = session.header.parentSession
@@ -303,6 +310,9 @@ export class HarnessSdkJsonRpcServer {
       content,
       source: { kind: 'user' },
     })
+    // Enqueued work counts as busy immediately: aborting right after a prompt
+    // must stop it even before the agent reports `running`.
+    this.busy.add(params.sessionId)
     rec.handle.agent.followup(message)
     return { messageId: message.id }
   }
@@ -433,6 +443,31 @@ export class HarnessSdkJsonRpcServer {
     this.assertLiveAgent(rec, sessionId)
     const accepted = this.sessionTitle().rename(rec.handle.agent.session, params.title)
     return { sessionId, title: accepted.title }
+  }
+
+  /**
+   * Abort one session's running turn.
+   *
+   * Cancels the current activity with a user cause: the turn closes with a
+   * `turn/end` reason of `aborted` on the event stream, and the next prompt
+   * starts a fresh turn. Only a session live in this runtime can be aborted —
+   * nothing is resumed or created. Aborting an idle session is an idempotent
+   * no-op reported as `aborted: false`.
+   * @param params - the session whose turn to abort.
+   * @returns the id and whether a running turn was actually cancelled.
+   */
+  async abortSession(params: SessionAbortParams): Promise<SessionAbortResult> {
+    this.assertInitialized()
+    const sessionId = assertSessionId('session/abort', params.sessionId)
+    const rec = this.sessions.get(sessionId)
+    if (rec === undefined) {
+      throw new Error(
+        `session "${sessionId}" is not live in this runtime; only a live session has a turn to abort`,
+      )
+    }
+    const running = this.busy.delete(sessionId)
+    if (running) rec.handle.agent.cancel({ kind: 'user' })
+    return { sessionId, aborted: running }
   }
 
   /**
@@ -601,6 +636,8 @@ export class HarnessSdkJsonRpcServer {
         return this.resumeSession(params as unknown as SessionResumeParams)
       case 'session/rename':
         return this.renameSession(params as unknown as SessionRenameParams)
+      case 'session/abort':
+        return this.abortSession(params as unknown as SessionAbortParams)
       case 'session/archive':
         return this.archiveSession(params as unknown as SessionArchiveParams)
       case 'session/unarchive':

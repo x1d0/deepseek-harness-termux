@@ -18,6 +18,8 @@ import {
   JsonRpcResponseError,
   type InitializeParams,
   type InitializeResult,
+  type SessionAbortParams,
+  type SessionAbortResult,
   type SessionArchiveParams,
   type SessionArchiveResult,
   type SessionDescriptor,
@@ -379,6 +381,19 @@ export class HarnessClient {
       throw new SdkProtocolError(`session/rename returned no accepted title: ${JSON.stringify(result)}`)
     }
     return { sessionId: result.sessionId, title: result.title }
+  }
+
+  /**
+   * Abort one session's running turn (user cancel).
+   * @param params - the session whose turn to abort.
+   * @returns the id and whether a running turn was actually cancelled.
+   */
+  async abortSession(params: SessionAbortParams): Promise<SessionAbortResult> {
+    const result = await this.request('session/abort', { ...params })
+    if (!isRecord(result) || typeof result.sessionId !== 'string' || typeof result.aborted !== 'boolean') {
+      throw new SdkProtocolError(`session/abort returned no abort outcome: ${JSON.stringify(result)}`)
+    }
+    return { sessionId: result.sessionId, aborted: result.aborted }
   }
 
   /**

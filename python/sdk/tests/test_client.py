@@ -1170,6 +1170,7 @@ import json
 import sys
 
 resumed = set()
+aborted = set()
 for line in sys.stdin:
     msg = json.loads(line)
     method = msg.get("method")
@@ -1194,6 +1195,14 @@ for line in sys.stdin:
             print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32603, "message": "session title must contain visible characters"}}), flush=True)
             continue
         print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"sessionId": params["sessionId"], "title": title}}), flush=True)
+    elif method == "session/abort":
+        session_id = params["sessionId"]
+        if session_id == "session-missing":
+            print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32603, "message": "session session-missing is not live in this runtime; only a live session has a turn to abort"}}), flush=True)
+            continue
+        first = session_id not in aborted
+        aborted.add(session_id)
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"sessionId": session_id, "archived": False, "aborted": first}}), flush=True)
     elif method in ("session/archive", "session/unarchive"):
         session_id = params["sessionId"]
         if session_id == "session-missing":
@@ -1235,6 +1244,11 @@ def test_client_mirrors_the_session_surface_requests(tmp_path: Path) -> None:
         assert renamed.sessionId == "session-a"
         assert renamed.title == "new  name"
 
+        aborted = client.abort_session("session-a")
+        assert aborted.sessionId == "session-a"
+        assert aborted.aborted is True
+        assert client.abort_session("session-a").aborted is False  # 幂等 no-op
+
         archived = client.archive_session("session-a")
         assert archived.sessionId == "session-a"
         assert archived.archived is True
@@ -1249,6 +1263,15 @@ def test_client_propagates_a_session_rename_refusal(tmp_path: Path) -> None:
             client.rename_session("session-a", "   ")
     assert refusal.value.code == -32603
     assert "visible characters" in refusal.value.message
+
+
+def test_client_propagates_an_abort_refusal(tmp_path: Path) -> None:
+    with HarnessClient(_launch_args=(sys.executable, str(_session_surface_bridge(tmp_path)))) as client:
+        client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
+        with pytest.raises(JsonRpcError) as refusal:
+            client.abort_session("session-missing")
+    assert refusal.value.code == -32603
+    assert "not live" in refusal.value.message
 
 
 def test_client_propagates_an_archive_refusal(tmp_path: Path) -> None:
@@ -1280,6 +1303,9 @@ def test_high_level_session_surface_mirrors_the_wire(tmp_path: Path) -> None:
         assert harness.start_session("session-a").resume() is False
         # The session handle also renames its own id.
         assert harness.start_session("session-a").rename("renamed") == "renamed"
+        # ...aborts its own turn (idle is a reported no-op)...
+        assert harness.start_session("session-a").abort() is True
+        assert harness.start_session("session-a").abort() is False
         # ...and archives/unarchives its own id.
         harness.start_session("session-a").archive()
         harness.start_session("session-a").unarchive()

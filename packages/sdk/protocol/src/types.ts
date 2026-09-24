@@ -187,6 +187,20 @@ export interface SessionRenameResult {
   title: string
 }
 
+/** Parameters for `session/abort`. */
+export interface SessionAbortParams {
+  /** Session whose running turn to abort; must be live in this runtime. */
+  sessionId: string
+}
+
+/** `session/abort` result. */
+export interface SessionAbortResult {
+  /** The affected session id (echo of the request). */
+  sessionId: string
+  /** Whether a running turn was actually cancelled (false when already idle). */
+  aborted: boolean
+}
+
 /** Parameters for `session/archive` and `session/unarchive`. */
 export interface SessionArchiveParams {
   /** Session to (un)archive; an id neither live nor persisted is an error. */
@@ -217,6 +231,8 @@ export interface HarnessSdkRequestMap {
   'session/history': { params: SessionHistoryParams; result: SessionHistoryResult }
   'session/resume': { params: SessionResumeParams; result: SessionResumeResult }
   'session/rename': { params: SessionRenameParams; result: SessionRenameResult }
+  /** Abort one session's running turn (user cancel; idempotent no-op when idle). */
+  'session/abort': { params: SessionAbortParams; result: SessionAbortResult }
   'session/archive': { params: SessionArchiveParams; result: SessionArchiveResult }
   'session/unarchive': { params: SessionArchiveParams; result: SessionArchiveResult }
   'shutdown': { params: undefined; result: Record<string, never> }

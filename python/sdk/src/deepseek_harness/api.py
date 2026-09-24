@@ -10,6 +10,7 @@ from .errors import SdkProtocolError
 from .models import (
     JsonObject,
     Notification,
+    SessionAbortResult,
     SessionArchiveResult,
     SessionHistoryResult,
     SessionListResult,
@@ -154,6 +155,11 @@ class DeepSeekHarness:
         self.start()
         return self._client.rename_session(session_id, title)
 
+    def abort_session(self, session_id: str) -> SessionAbortResult:
+        """Abort one live session's running turn (idle is a reported no-op)."""
+        self.start()
+        return self._client.abort_session(session_id)
+
     def archive_session(self, session_id: str) -> SessionArchiveResult:
         """Add one session to the registry-global archive set (visibility only)."""
         self.start()
@@ -177,6 +183,10 @@ class Session:
     def rename(self, title: str) -> str:
         """Rename this live session; resume a persisted one first."""
         return self.harness.rename_session(self.id, title).title
+
+    def abort(self) -> bool:
+        """Abort this session's running turn; False when it was already idle."""
+        return self.harness.abort_session(self.id).aborted
 
     def archive(self) -> None:
         """Archive this session (log and workspace accounting untouched)."""
