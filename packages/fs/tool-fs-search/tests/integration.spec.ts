@@ -1,12 +1,13 @@
 /**
- * Integration tests: the REAL local subprocess service plus the PACKAGED
- * ripgrep binary (`@vscode/ripgrep`), exercised through `ctx.tools.execute()`.
- * These verify the WORLD — actual files on disk are discovered and grepped,
- * hostile patterns stay inert (they are plain argv elements; there is no
- * shell layer to escape), and real `rg` stderr classifies into the
- * `SEARCH_*` vocabulary. The binary ships inside the npm dependency, so the
- * suite runs on every platform without a system `rg` install; the
- * fake-service suite (tools.spec.ts) carries the coverage gate.
+ * Integration tests: the REAL local subprocess service plus the RESOLVED
+ * ripgrep binary, exercised through `ctx.tools.execute()`. These verify the
+ * WORLD — actual files on disk are discovered and grepped, hostile patterns
+ * stay inert (they are plain argv elements; there is no shell layer to
+ * escape), and real `rg` stderr classifies into the `SEARCH_*` vocabulary.
+ * The executable is the packaged `@vscode/ripgrep` binary where the platform
+ * package installs and the host `rg` on a platform without one, so on such a
+ * host this suite exercises the fallback; the fake-service suite
+ * (tools.spec.ts) carries the coverage gate.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'

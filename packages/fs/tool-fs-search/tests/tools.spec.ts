@@ -20,7 +20,6 @@ import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH, type ToolExecution, type Too
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessCollectedOutputs, SubprocessHandle, SubprocessOutcome, SubprocessOutputRead, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import { rgPath } from '@vscode/ripgrep'
 import { SpillLocator, SpillStore } from '@deepseek-ai/dsh-spill'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
@@ -41,6 +40,15 @@ import {
 } from '@deepseek-ai/dsh-tool-fs-search'
 
 const testToolSignal = new AbortController().signal
+
+/**
+ * The executable the search must spawn: the packaged `@vscode/ripgrep` binary
+ * when this install carries the platform package, else the bare `rg` name the
+ * fake seam's `resolveExecutable` echoes back — the two ends of the resolution
+ * order `runRipgrep` documents. The resolution contract itself is pinned in
+ * rg-sidecar.spec.ts and rg-path.spec.ts.
+ */
+const expectedRipgrep = await resolveRgPath().catch(() => 'rg')
 
 /**
  * Normalize a POSIX-style test path to the platform separator: the sampler and
@@ -236,8 +244,8 @@ function matchLine(path: string, lineNumber: number, lineText: string): string {
 describe('registration', () => {
   it('registers glob and grep unconditionally with their prompt sections', async () => {
     const { ctx, subprocess } = await setup()
-    // Registration performs NO load-time probe: the packaged binary is always
-    // available, so nothing spawns until a tool call.
+    // Registration performs NO load-time probe: the executable resolves at
+    // the first search call, so nothing spawns until a tool call.
     expect(subprocess.spawns).toHaveLength(0)
     expect(ctx.tools.schemas().map(s => s.name).sort()).toEqual(['glob', 'grep'])
     const prompt = renderPrompt(await ctx.systemPrompt.assemble())
@@ -398,7 +406,7 @@ describe('workdir derivation and signal forwarding', () => {
     expect(subprocess.spawns[1]?.cwd).toBe(process.cwd())
   })
 
-  it('spawns the packaged ripgrep binary with --no-config, the fixed argv, and budgeted collect streams', async () => {
+  it('spawns the resolved ripgrep binary with --no-config, the fixed argv, and budgeted collect streams', async () => {
     const { ctx, subprocess } = await setup({
       config: { rawOutputMaxBytes: 1234, graceMs: 5000, stderrMaxBytes: 4096 },
     })
@@ -407,7 +415,7 @@ describe('workdir derivation and signal forwarding', () => {
     const spec = subprocess.spawns[0]
     // --no-config keeps a host RIPGREP_CONFIG_PATH from injecting a
     // preprocessor into this unconfined spawn.
-    expect(spec?.argv).toEqual([rgPath, '--no-config', '--json', '--regexp=needle'])
+    expect(spec?.argv).toEqual([expectedRipgrep, '--no-config', '--json', '--regexp=needle'])
     expect(spec?.stdio.stdin).toBe('ignore')
     // stdout gets the tool's parse budget; stderr is a diagnostic excerpt;
     // both are the seam's diagnostic-tail shape (no spill files requested).
@@ -524,13 +532,12 @@ describe('workdir derivation and signal forwarding', () => {
     expect(text(result)).toContain('aborted before completion')
   })
 
-  it('resolves the packaged ripgrep path lazily, once per process', async () => {
+  it('resolves the ripgrep executable lazily, once per process', async () => {
     // The module must not touch @vscode/ripgrep at load (a missing platform
     // package would otherwise fail the whole composition), and repeated
-    // resolution reuses the first result. The resolution-failure path is
-    // pinned separately in rg-path.spec.ts.
+    // resolution reuses the first result. The resolved value is pinned in
+    // rg-sidecar.spec.ts; the failure and host-rg fallback in rg-path.spec.ts.
     await setup()
-    expect(await resolveRgPath()).toBe(rgPath)
     expect(resolveRgPath()).toBe(resolveRgPath())
   })
 
@@ -750,7 +757,7 @@ describe('glob results', () => {
     subprocess.handler = () => runResult('sub/a.ts\n')
     const result = await call(ctx, 'glob', { pattern: '*.ts', path: 'sub' })
     expect(result.isError).toBe(false)
-    expect(subprocess.spawns[0]?.argv).toEqual([rgPath, '--no-config', '--files', '--glob=*.ts', '--sort=modified', '--no-ignore', '--hidden',
+    expect(subprocess.spawns[0]?.argv).toEqual([expectedRipgrep, '--no-config', '--files', '--glob=*.ts', '--sort=modified', '--no-ignore', '--hidden',
       '--glob=!**/.git', '--glob=!**/.git/**',
       '--glob=!**/.svn', '--glob=!**/.svn/**',
       '--glob=!**/.hg', '--glob=!**/.hg/**',

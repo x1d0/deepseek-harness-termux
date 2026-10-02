@@ -1,8 +1,8 @@
 /**
- * The model-facing filesystem discovery tool suite (`glob`, `grep`) over the
- * packaged ripgrep binary (`@vscode/ripgrep`). This single plugin registers
- * both tools; the binary ships inside the npm dependency, so no system `rg`
- * install and no shell layer is involved.
+ * The model-facing filesystem discovery tool suite (`glob`, `grep`) over
+ * ripgrep. This single plugin registers both tools; the binary comes from the
+ * npm dependency (`@vscode/ripgrep`), or from the host `rg` where that
+ * packaging has none, and no shell layer is involved.
  *
  * ## Spawn-backed, not a `ctx.fs` provider method
  *

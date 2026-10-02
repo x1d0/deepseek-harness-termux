@@ -1,7 +1,7 @@
 /**
  * The model-facing `glob` tool: discover files whose paths match a glob
- * pattern, sorted by modification time. Execution spawns the packaged
- * ripgrep binary (`@vscode/ripgrep`) directly through the subprocess seam
+ * pattern, sorted by modification time. Execution spawns the resolved
+ * ripgrep binary directly through the subprocess seam
  * with a plain argv vector — this module owns the model-facing schema,
  * argument validation, argv construction, result parsing, inline sampling,
  * and formatting; process concerns (spawn execution, tree termination,

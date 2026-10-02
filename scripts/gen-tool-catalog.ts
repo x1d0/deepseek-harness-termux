@@ -402,8 +402,8 @@ const TOOL_PACKAGES: ToolPackage[] = [
     requires: ['ctx.tools', 'ctx.subprocess', 'ctx.systemPrompt'],
     writes: ['tool/call', 'tool/result'],
     async mount(ctx) {
-      // The tools inject `subprocess` (search spawns the packaged ripgrep
-      // binary through the seam, not ctx.fs); registration itself never
+      // The tools inject `subprocess` (search spawns ripgrep through the
+      // seam, not ctx.fs); registration itself never
       // spawns, so the real local service is inert here. `ctx.spillStore` is
       // optional (read via ctx.get) and does not affect the schemas, so no
       // spill backend is mounted.
@@ -411,7 +411,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolFsSearch, { sampleOverCapGlobResults: true })
     },
     note:
-      'glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments.',
+      'glob and grep are unconditional discovery tools that spawn ripgrep through ctx.subprocess as ordinary foreground calls (never background jobs) with no shell layer: the packaged `@vscode/ripgrep` binary, or the host `rg` where that packaging has none. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-terminal',

@@ -491,10 +491,10 @@ const EXPECTED_TOOLS = [
 ]
 
 /**
- * `glob` and `grep` come from `dsh-tool-fs-search`, which spawns the PACKAGED
- * ripgrep binary (`@vscode/ripgrep`) through the subprocess seam, so the pair
- * is always present on every host — asserted as fixed members, not a host
- * dependency.
+ * `glob` and `grep` come from `dsh-tool-fs-search`, which spawns ripgrep
+ * through the subprocess seam (the packaged `@vscode/ripgrep` binary, or the
+ * host `rg` where that packaging has none). Registration resolves no
+ * executable, so the pair is a fixed roster member on every host.
  */
 const RIPGREP_TOOLS = ['glob', 'grep']
 
@@ -593,8 +593,8 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   try {
     const names = ctx.tools.schemas(handle.agent).map(schema => schema.name).sort()
     expect(names.filter(name => !RIPGREP_TOOLS.includes(name))).toEqual(EXPECTED_TOOLS)
-    // The packaged ripgrep binary ships with the dependency, so the pair is a
-    // fixed roster member on every host.
+    // Registration resolves no ripgrep executable, so the pair is a fixed
+    // roster member on every host.
     expect(names.filter(name => RIPGREP_TOOLS.includes(name))).toEqual(RIPGREP_TOOLS)
     const fileReferenceSection = (await ctx.systemPrompt.assemble({ scope: handle.agent })).sections
       .find(section => section.name === 'ui:deliverable-file-references')

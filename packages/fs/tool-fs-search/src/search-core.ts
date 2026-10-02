@@ -1,15 +1,19 @@
 /**
  * Shared execution plumbing for the `glob` / `grep` search tools: the
  * package-owned `SEARCH_*` error vocabulary, one spawn helper that runs the
- * PACKAGED ripgrep binary (`@vscode/ripgrep`) with a plain argv vector and
- * returns complete raw stdout, the best-effort formatted-result spill handoff,
- * and workdir-relative path display.
+ * RESOLVED ripgrep binary (packaged `@vscode/ripgrep`, or the host `rg` where
+ * that packaging has none) with a plain argv vector and returns complete raw
+ * stdout, the best-effort formatted-result spill handoff, and workdir-relative
+ * path display.
  *
  * Both tools execute as ordinary foreground spawns through `ctx.subprocess` —
  * never `ctx.shell`, never `ctx.shell.start()`, never a model-visible background
- * task. The ripgrep binary ships inside the npm package, so no system `rg`
- * install is required, and no shell layer exists between the argv vector and
- * ripgrep, so no shell quoting is involved. Raw `rg` stdout is an internal
+ * task. The ripgrep binary ships inside the npm package (the executable's `-rg`
+ * sidecar in a single-file runtime), so no system `rg` install is required on
+ * the platforms that packaging covers; a platform without a packaged binary
+ * falls back to the host `rg` the subprocess seam resolves. No shell layer
+ * exists between the argv vector and ripgrep, so no shell quoting is involved.
+ * Raw `rg` stdout is an internal
  * transport detail: the tools request a per-run stdout capture budget from the
  * subprocess seam, parse only complete in-memory stdout within
  * `rawOutputMaxBytes`, and never read spill files. The model-facing recovery
@@ -166,7 +170,8 @@ let rgPathPromise: Promise<string> | undefined
  * call as `SEARCH_FAILED`, rather than failing the Loader composition.
  *
  * @returns the packaged binary's absolute path; the memoized promise rejects
- *   when the platform package cannot be resolved.
+ *   when the platform package cannot be resolved, which sends
+ *   {@link runRipgrep} to the host-`rg` fallback.
  */
 export function resolveRgPath(): Promise<string> {
   rgPathPromise ??= Promise.resolve().then(async () => {
@@ -184,7 +189,46 @@ export function resolveRgPath(): Promise<string> {
 }
 
 /**
- * Run the packaged ripgrep binary with a plain argv vector and return its
+ * The ripgrep executable one search spawns.
+ *
+ * The packaged binary wins (see {@link resolveRgPath}), so its pinned version
+ * runs wherever the packaging covers the platform. A platform the packaging
+ * does not cover — no published `@vscode/ripgrep-<platform>-<arch>` package
+ * (Android, for example), or an install that omitted the optional dependency —
+ * falls back to the `rg` the subprocess seam resolves in the provider's
+ * execution world, and the version then follows that host. A process that has
+ * neither fails the call with both attempts in the message.
+ *
+ * The fallback is not memoized: it re-resolves on every search so a host `rg`
+ * installed after startup is picked up, and `exec.signal` can still cancel the
+ * lookup.
+ *
+ * @param ctx - the plugin context; the fallback resolves through its `subprocess` service.
+ * @param exec - the tool-execution context; supplies the abort signal for the fallback lookup.
+ * @param toolName - `glob` or `grep`, used in error messages.
+ * @returns the absolute path of the executable to spawn.
+ */
+async function searchExecutable(ctx: Context, exec: ToolExecution, toolName: string): Promise<string> {
+  try {
+    return await resolveRgPath()
+  } catch (packaged: unknown) {
+    try {
+      return await ctx.subprocess.resolveExecutable('rg', undefined, exec.signal)
+    } catch (host: unknown) {
+      if (exec.signal.aborted) {
+        throw new SearchError(`${toolName} was aborted before completion (tool timeout or caller cancellation)`, 'SEARCH_ABORTED')
+      }
+      throw new SearchError(
+        `${toolName} could not start its search command: no packaged ripgrep binary (${packaged}) and no host rg (${host})`,
+        'SEARCH_FAILED',
+        { cause: packaged },
+      )
+    }
+  }
+}
+
+/**
+ * Run the resolved ripgrep binary with a plain argv vector and return its
  * complete raw stdout. The working directory is the calling agent's session
  * cwd (`exec.agent.session.header.cwd`) when available, else
  * `process.cwd()`. `exec.signal` is forwarded so the cooperative tool timeout
@@ -202,13 +246,15 @@ export function resolveRgPath(): Promise<string> {
  * success with zero results (`noMatches`), anything else throws a
  * {@link SearchError} (abort/timeout → `SEARCH_ABORTED`, invalid pattern →
  * `SEARCH_INVALID_PATTERN`, the rest → `SEARCH_FAILED` /
- * `SEARCH_RAW_OUTPUT_OVERFLOW`). Both launch-time failure domains are
- * classified: a synchronous throw at spawn CREATION (a NUL in argv, an abort
- * racing the pre-check, a rejected `@vscode/ripgrep` resolution) reports that
- * the command could not start, while a rejection of `handle.done` reports a
- * provider failure without claiming whether execution began. Both become
- * `SEARCH_FAILED` with the original as `cause`; an abort already observed by
- * creation time becomes `SEARCH_ABORTED` instead.
+ * `SEARCH_RAW_OUTPUT_OVERFLOW`). Launch-time failures are classified per
+ * domain: a process with neither a packaged binary nor a host `rg` fails as
+ * `SEARCH_FAILED` from {@link searchExecutable} with both attempts in the
+ * message, a synchronous throw at spawn CREATION (a NUL in argv, an abort
+ * racing the pre-check) reports that the command could not start, and a
+ * rejection of `handle.done` reports a provider failure without claiming
+ * whether execution began. The latter two become `SEARCH_FAILED` with the
+ * original as `cause`; an abort already observed by creation time becomes
+ * `SEARCH_ABORTED` instead.
  *
  * @param ctx - the plugin context; execution uses its `subprocess` service.
  * @param exec - the tool-execution context; supplies the session cwd and the abort signal.
@@ -233,10 +279,11 @@ export async function runRipgrep(
   }
   const cwd = exec.agent?.session.header.cwd
   const workdir = cwd ?? process.cwd()
+  const executable = await searchExecutable(ctx, exec, toolName)
   let handle: SubprocessHandle
   try {
     handle = ctx.subprocess.spawn({
-      argv: [await resolveRgPath(), '--no-config', ...argv],
+      argv: [executable, '--no-config', ...argv],
       cwd: workdir,
       stdio: {
         stdin: 'ignore',
@@ -249,7 +296,7 @@ export async function runRipgrep(
   } catch (error: unknown) {
     // Node's spawn() throws synchronously for a NUL in argv, and the local
     // impl can throw synchronously when the signal aborts between the check
-    // above and this call (or when the platform-package resolution rejects).
+    // above and this call.
     // The static narrowing that proves this re-check "always false" cannot
     // see AbortSignal state changes.
     // oxlint-disable-next-line typescript/no-unnecessary-condition
