@@ -4670,7 +4670,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FiberState',
-    declaration: 'export const enum FiberState {\n    PENDING,\n    LOADING,\n    ACTIVE,\n    FAILED,\n    DISPOSED,\n    UNLOADING\n}',
+    declaration: 'export enum FiberState {\n    PENDING,\n    LOADING,\n    ACTIVE,\n    FAILED,\n    DISPOSED,\n    UNLOADING\n}',
   },
   {
     name: 'FileAttachmentRef',
