@@ -57,10 +57,9 @@ git status --porcelain            # 期望为空（lib/ 被 gitignore，不进�
 node -v; pnpm -v
 ```
 
-> 本 skill 首次成文时在一个专门分支（`feat/sdk-session-surface`，提交
-> `fc34499892`/`8a936c6f22`/`1ba1256bee`）上做那三个方法；那批提交早已合入 `master`，
-> 后续改动会另开分支（例如 `feat/sdk-session-rename`）。**别把具体分支名/提交号当硬前置**
-> ——工作树干净就能开工。
+> 本 skill 首次成文时在一个专门分支（`feat/sdk-session-surface`，三笔提交）上做那三个方法；
+> 那批提交早已合入 `master`，后续改动会另开分支（例如 `feat/sdk-session-rename`）。
+> **别把具体分支名/提交号当硬前置**——工作树干净就能开工。
 
 工作树不干净就先弄清是什么：`lib/` 已被 `.gitignore` 忽略，不会出现在 `git status` 里，
 所以任何未跟踪文件都值得看一眼。
@@ -117,7 +116,7 @@ opt-in*）——模块根**不监听**，只按精确路径监听 profile 配置
 **不会**触发任何热重载；别指望 HMR 帮你刷新，也别担心它把会话打崩。
 
 **内容差比"你的改动"宽得多。** 上一次构建到现在之间落地的**所有**提交会一次性生效。本例：
-上次构建是 Sep 20 10:38，之后有 4 个提交，其中 `ba34c43ff0`（termux 平台修复）改了 4 个
+上次构建是 Sep 20 10:38，之后有 4 个提交，其中 termux 平台修复那笔改了 4 个
 **web profile 真会加载**的运行时源文件（`app-boot` 的 profile 解析、`session-persistence-jsonl`、
 `attachment-local` 的 store、native flock）。也就是说：重建不只是"让新方法上线"，它把积压的
 未编译改动一起激活了。**而你自己的改动可能根本不在这条链上**：`packages/sdk/*` 只被
